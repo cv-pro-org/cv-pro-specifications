@@ -6,6 +6,7 @@
 flowchart TB
     subgraph Internet
         U[Utilisateur]
+        G[Google OAuth]
     end
 
     subgraph Infra["Oracle Linux ARM (Docker)"]
@@ -14,6 +15,7 @@ flowchart TB
         subgraph App["Next.js App"]
             FE[Pages React<br/>Tailwind]
             API[API Routes]
+            AUTH[NextAuth<br/>Google Provider]
             RENDER[/internal/cv-render]
         end
         
@@ -31,8 +33,10 @@ flowchart TB
     T --> FE
     T --> API
     
+    U <-->|OAuth| G
+    AUTH <-->|Verify| G
+    
     API <-->|Session/Users/Jobs| MONGO
-    API -->|Magic Link| RESEND
     
     W -->|Poll jobs| MONGO
     W -->|Generate text| OPENAI
@@ -45,7 +49,7 @@ flowchart TB
 
 ---
 
-## Flux utilisateur complet
+## Flux utilisateur complet (Google OAuth)
 
 ```mermaid
 sequenceDiagram
@@ -53,26 +57,28 @@ sequenceDiagram
     actor U as Utilisateur
     participant FE as Frontend
     participant API as API Routes
+    participant G as Google OAuth
     participant DB as MongoDB
     participant W as Worker
     participant AI as OpenAI
     participant PW as Playwright
     participant R as Resend
 
-    %% Auth
-    U->>FE: Accède /login
-    U->>FE: Entre email
-    FE->>API: POST /api/auth/signin/email
-    API->>R: Envoie magic link
-    R-->>U: Email reçu
-    U->>FE: Clique lien
-    FE->>API: GET /api/auth/callback/email
-    API->>DB: Upsert user
+    %% Auth Google
+    U->>FE: Clique "Connexion Google"
+    FE->>G: Redirect OAuth
+    G-->>U: Consent screen
+    U->>G: Accepte
+    G-->>FE: Callback + code
+    FE->>API: GET /api/auth/callback/google
+    API->>G: Exchange code → tokens
+    G-->>API: Access token + user info
+    API->>DB: Upsert user (email, name, image)
     API-->>FE: Session cookie
-    FE-->>U: Redirige /generate
+    FE-->>U: Redirect /generate
 
     %% Génération
-    U->>FE: Remplit formulaire
+    U->>FE: Remplit formulaire (name pré-rempli)
     U->>FE: Clique "Générer"
     FE->>API: POST /api/cv/jobs
     API->>DB: Check quota (usage_counters)
@@ -95,7 +101,7 @@ sequenceDiagram
         R-->>U: Email notification
         
         %% Download
-        U->>FE: Clique lien email ou poll
+        U->>FE: Clique lien ou poll
         FE->>API: GET /api/cv/jobs/:id
         API-->>FE: { status: done, downloadUrl }
         U->>FE: Clique télécharger
@@ -103,7 +109,7 @@ sequenceDiagram
         API-->>U: Stream PDF
     else Quota atteint
         API-->>FE: 403 QUOTA_REACHED
-        FE-->>U: Redirige /upgrade
+        FE-->>U: Redirect /upgrade
     end
 ```
 
@@ -148,8 +154,8 @@ flowchart LR
 
 ```mermaid
 flowchart TD
-    A[Request] --> B{Auth?}
-    B -->|Non + route protégée| C[401 / Redirect login]
+    A[Request] --> B{Session?}
+    B -->|Non + route protégée| C[Redirect /login]
     B -->|Oui| D{Owner?}
     D -->|Non| E[403 / 404]
     D -->|Oui| F{Quota?}
@@ -158,4 +164,3 @@ flowchart TD
     H -->|Bloqué| I[429 RATE_LIMITED]
     H -->|OK| J[Process request]
 ```
-
