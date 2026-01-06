@@ -1,0 +1,55 @@
+version: "3.9"
+
+services:
+  traefik:
+    image: traefik:v3.2
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+      - --entrypoints.websecure.address=:443
+      - --certificatesresolvers.le.acme.tlschallenge=true
+      - --certificatesresolvers.le.acme.email=${LETSENCRYPT_EMAIL}
+      - --certificatesresolvers.le.acme.storage=/letsencrypt/acme.json
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - letsencrypt:/letsencrypt
+
+  app:
+    image: cv-pro/app:latest
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=${MONGODB_URI}
+      - NEXTAUTH_URL=${NEXTAUTH_URL}
+      - NEXTAUTH_SECRET=${NEXTAUTH_SECRET}
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - APP_BASE_URL=${APP_BASE_URL}
+      - PDF_STORAGE_DIR=/data/pdfs
+    volumes:
+      - pdfs:/data/pdfs
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.app.rule=Host(`${APP_DOMAIN}`)
+      - traefik.http.routers.app.entrypoints=websecure
+      - traefik.http.routers.app.tls.certresolver=le
+
+  worker:
+    image: cv-pro/worker:latest
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=${MONGODB_URI}
+      - APP_INTERNAL_URL=http://app:3000
+      - RESEND_API_KEY=${RESEND_API_KEY}
+      - PDF_STORAGE_DIR=/data/pdfs
+      - WORKER_POLL_INTERVAL_MS=1000
+    volumes:
+      - pdfs:/data/pdfs
+    depends_on:
+      - app
+
+volumes:
+  letsencrypt:
+  pdfs:

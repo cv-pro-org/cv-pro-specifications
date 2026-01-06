@@ -1,0 +1,12 @@
+# Sprint 2 — Liste des US
+- US-010 Statut job
+- US-011 Worker consommation jobs
+- US-012 OpenAI JSON strict + validation
+- US-013 Template HTML imprimable
+- US-014 Génération PDF Playwright
+- US-015 Stockage PDF + job done
+- US-016 Download sécurisé
+- US-017 Email notification PDF prêt
+- US-018 Healthcheck + logs
+- US-019 Docker compose prod
+- US-020 CI/CD GitHub Actions
