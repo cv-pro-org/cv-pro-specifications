@@ -2,32 +2,119 @@
 
 ## 📋 Vue d'ensemble
 
-Architecture **simplifiée MVP** : génération synchrone, pas de worker async.
+Architecture **React + Python FastAPI** : frontend séparé, backend API REST.
 
 **Stack:**
-- Next.js 14 App Router
-- API Routes dans `/app/api/`
-- NextAuth.js pour authentification
-- MongoDB Atlas pour données utilisateur
+- Frontend : React 18 (Vite build)
+- Backend : Python 3.11+ FastAPI
+- Auth : JWT tokens (Google OAuth)
+- Base de données : MongoDB Atlas (Motor driver)
 
 ---
 
 ## 🔐 Authentification
 
-### NextAuth Routes (Standards)
-- `GET/POST /api/auth/*` — Gérées par NextAuth
-- `GET /api/auth/signin` — Page login
-- `GET /api/auth/signout` — Déconnexion
-- `POST /api/auth/callback/email` — Magic link callback
+### `GET /api/auth/google`
 
-**Provider configuré:**
-```typescript
-providers: [
-  EmailProvider({
-    server: process.env.EMAIL_SERVER,
-    from: 'noreply@skillforge.app'
-  })
-]
+Initie le flow OAuth Google.
+
+**Auth:** ❌ Non requise
+
+**Response:**
+```json
+{
+  "authUrl": "https://accounts.google.com/o/oauth2/v2/auth?client_id=..."
+}
+```
+
+**Frontend action:**
+```javascript
+// Redirect user to authUrl
+window.location.href = response.authUrl
+```
+
+---
+
+### `GET /api/auth/google/callback`
+
+Callback OAuth Google (après autorisation).
+
+**Query Params:**
+- `code` — Authorization code Google
+- `state` — CSRF token
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "token_type": "Bearer",
+  "expires_in": 3600,
+  "user": {
+    "id": "usr_123abc",
+    "email": "user@gmail.com",
+    "name": "Marie Dupont",
+    "picture": "https://lh3.googleusercontent.com/..."
+  }
+}
+```
+
+**Frontend action:**
+```javascript
+// Store tokens
+localStorage.setItem('access_token', response.access_token)
+localStorage.setItem('refresh_token', response.refresh_token)
+
+// Redirect to dashboard
+navigate('/dashboard')
+```
+
+---
+
+### `POST /api/auth/refresh`
+
+Renouvelle le JWT token expiré.
+
+**Auth:** ✅ Requise (refresh token)
+
+**Request Body:**
+```json
+{
+  "refresh_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+}
+```
+
+**Response:**
+```json
+{
+  "access_token": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...",
+  "expires_in": 3600
+}
+```
+
+---
+
+### `POST /api/auth/logout`
+
+Déconnecte l'utilisateur (invalidation token).
+
+**Auth:** ✅ Requise
+
+**Response:**
+```json
+{
+  "success": true
+}
+```
+
+**Frontend action:**
+```javascript
+// Clear tokens
+localStorage.removeItem('access_token')
+localStorage.removeItem('refresh_token')
+
+// Redirect to landing
+navigate('/')
 ```
 
 ---
@@ -41,21 +128,23 @@ Liste tous les templates disponibles.
 **Auth:** ❌ Non requise (public)
 
 **Response:**
-```typescript
-{
-  templates: TemplateSummary[]
-}
+```python
+# Python Pydantic models
+from pydantic import BaseModel
+from typing import List
 
-interface TemplateSummary {
-  id: string                  // "modern", "classic", "minimal", "creative"
-  name: string                // "Modern Professional"
-  description: string         // "Design épuré et moderne..."
-  previewUrl: string          // "/templates/previews/modern.png"
-  style: string               // "modern" | "classic" | "minimal" | "creative"
-  pages: number               // 1 ou 2
-  atsFriendly: boolean        // Optimisé ATS
-  isPremium: boolean          // Réservé plan payant (v2)
-}
+class TemplateSummary(BaseModel):
+    id: str                  # "modern", "classic", "minimal", "creative"
+    name: str                # "Modern Professional"
+    description: str         # "Design épuré et moderne..."
+    preview_url: str         # "/templates/previews/modern.png"
+    style: str               # "modern" | "classic" | "minimal" | "creative"
+    pages: int               # 1 ou 2
+    ats_friendly: bool       # Optimisé ATS
+    is_premium: bool         # Réservé plan payant (v2)
+
+class TemplatesResponse(BaseModel):
+    templates: List[TemplateSummary]
 ```
 
 **Exemple:**
@@ -95,22 +184,19 @@ Détail d'un template avec ses options.
 **Auth:** ❌ Non requise
 
 **Response:**
-```typescript
-interface TemplateDetail extends TemplateSummary {
-  colorSchemes: ColorScheme[]
-  fontOptions: string[]
-  supportedSections: string[]   // ["experience", "education", "skills", "languages"]
-  customizable: {
-    colors: boolean
-    fonts: boolean
-    layout: boolean
-  }
-}
+```python
+class ColorScheme(BaseModel):
+    id: str
+    name: str
+    primary: str    # Hex color
+    accent: str
 
-interface ColorScheme {
-  id: string
-  name: string
-  primary: string    // Hex color
+class TemplateDetail(TemplateSummary):
+    color_schemes: List[ColorScheme]
+    font_options: List[str]
+    supported_sections: List[str]   # ["experience", "education", "skills", "languages"]
+    customizable: dict              # {"colors": true, "fonts": true, "layout": false}
+```
   accent: string
 }
 ```
@@ -126,24 +212,27 @@ interface ColorScheme {
 
 Génère un CV structuré à partir d'un prompt.
 
-**Auth:** ✅ Requise (session NextAuth)
+**Auth:** ✅ Requise (JWT Bearer token)
+
+**Headers:**
+```
+Authorization: Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+```
 
 **Request Body:**
-```typescript
-interface CVGenerateRequest {
-  prompt: string                    // Description parcours (max 2000 chars)
-  jobDescription?: string           // Optionnel : annonce pour ciblage (max 3000 chars)
-  templateId?: string               // Default: "modern"
-}
+```python
+class CVGenerateRequest(BaseModel):
+    prompt: str                     # Description parcours (max 2000 chars)
+    job_description: Optional[str]  # Optionnel : annonce ciblage (max 3000 chars)
+    template_id: str = "modern"     # Default: "modern"
 ```
 
 **Response:**
-```typescript
-interface CVGenerateResponse {
-  cv: CVData                        // Données structurées (voir types ci-dessous)
-  isDemo: boolean                   // true si fallback démo utilisé
-  quotaRemaining: number            // Nombre CV restants ce mois
-}
+```python
+class CVGenerateResponse(BaseModel):
+    cv: CVData                      # Données structurées (voir types ci-dessous)
+    is_demo: bool                   # true si fallback démo utilisé
+    quota_remaining: int            # Nombre CV restants ce mois
 ```
 
 **Errors:**
