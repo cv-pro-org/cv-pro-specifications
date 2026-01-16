@@ -22,6 +22,7 @@ Indexes:
 ## `cv_jobs`
 - `_id`
 - `userId`
+- `templateId` : identifiant du template utilisé (ex: `modern-01`)
 - `status` : `queued | running | done | failed`
 - `createdAt`, `startedAt`, `finishedAt`
 - `input` : payload normalisé du formulaire (MVP: stockage minimal, voire anonymisé)
